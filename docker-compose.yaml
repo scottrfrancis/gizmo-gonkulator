@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  mcp-calculator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8080
+      - MCP_LOG_LEVEL=info
+      - MCP_SESSION_TIMEOUT=10m
+      - MCP_MAX_SESSIONS=10000
+      - MCP_RATE_LIMIT=60
+      - MCP_RATE_LIMIT_BURST=10
+      # OAuth settings (optional)
+      # - MCP_OAUTH_ENABLED=true
+      # - MCP_OAUTH_ISSUER=https://your-tenant.auth0.com/
+      # - MCP_OAUTH_AUDIENCE=https://mcp-calculator.example.com
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M

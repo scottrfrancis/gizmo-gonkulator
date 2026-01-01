@@ -1,0 +1,52 @@
+# MCP Calculator Server Configuration
+# Copy this file and modify for your environment
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+session:
+  # Session inactivity timeout
+  timeout: 10m
+  # Maximum concurrent sessions
+  max_sessions: 10000
+  # Cleanup interval for expired sessions
+  cleanup_interval: 1m
+
+rate_limit:
+  enabled: true
+  # Requests per minute
+  requests_per_minute: 60
+  # Burst size (max requests in short period)
+  burst_size: 10
+
+# OAuth 2.1 Authentication (optional)
+# When enabled, requires valid JWT bearer token
+oauth:
+  enabled: false
+  # OAuth issuer URL (e.g., https://your-tenant.auth0.com/)
+  issuer: ""
+  # Expected audience (this server's resource URI)
+  audience: ""
+  # JWKS URL (defaults to {issuer}/.well-known/jwks.json)
+  jwks_url: ""
+  # Required scopes (comma-separated)
+  scopes: []
+  # Allowed signing algorithms
+  algorithms:
+    - RS256
+    - ES256
+
+logging:
+  # Log level: debug, info, warn, error
+  level: info
+  # Log format: json, text
+  format: json
+
+# Metrics endpoint (Prometheus-compatible)
+metrics:
+  enabled: true
+  path: /metrics
