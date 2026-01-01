@@ -162,7 +162,3 @@ python -m mcp_calculator --test
 ## License
 
 MIT
-
-***REMOVED***
-
-
