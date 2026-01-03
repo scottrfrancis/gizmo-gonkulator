@@ -1,4 +1,8 @@
+![MCP Calculator Banner](banner.jpg)
+
 # mcp-calculator
+
+<img src="Logo.jpg" alt="MCP Calculator Logo" width="120" align="right" />
 
 **Precise Arithmetic for AI Agents**
 
