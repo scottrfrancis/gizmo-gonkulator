@@ -70,9 +70,20 @@ func (e *Engine) Execute(calculations []Calculation) Result {
 }
 
 // resolveArg resolves a single argument, which may be a number or a reference.
+// The visited map tracks already-resolved variable names to detect circular references.
 func (e *Engine) resolveArg(arg any) (decimal.Decimal, error) {
+	return e.resolveArgWithVisited(arg, make(map[string]bool))
+}
+
+// resolveArgWithVisited resolves an argument with cycle detection.
+func (e *Engine) resolveArgWithVisited(arg any, visited map[string]bool) (decimal.Decimal, error) {
 	switch v := arg.(type) {
 	case string:
+		// Check for circular reference
+		if visited[v] {
+			return decimal.Zero, fmt.Errorf("circular reference detected: '%s'", v)
+		}
+
 		// Variable reference
 		if result, ok := e.results[v]; ok {
 			if errMap, isErr := result.(map[string]any); isErr {
@@ -80,7 +91,9 @@ func (e *Engine) resolveArg(arg any) (decimal.Decimal, error) {
 					return decimal.Zero, fmt.Errorf("cannot use errored result '%s'", v)
 				}
 			}
-			return e.resolveArg(result)
+			// Mark as visited before recursing
+			visited[v] = true
+			return e.resolveArgWithVisited(result, visited)
 		}
 		// Try to parse as number string
 		return decimal.NewFromString(v)
@@ -168,79 +181,86 @@ func (e *Engine) executeOne(operation string, args []any) (any, error) {
 	}
 }
 
-func (e *Engine) opAdd(args []decimal.Decimal) (float64, error) {
+// decimalToNumber converts a Decimal to a numeric value.
+// For integers, returns int64 to avoid floating point representation issues.
+// For decimals, returns the float64 representation.
+func decimalToNumber(d decimal.Decimal) any {
+	// If it's an integer, return as int64 for cleaner JSON output
+	if d.Equal(d.Truncate(0)) {
+		return d.IntPart()
+	}
+	// Otherwise return as float64
+	f, _ := d.Float64()
+	return f
+}
+
+func (e *Engine) opAdd(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("add requires at least 2 arguments")
+		return nil, fmt.Errorf("add requires at least 2 arguments")
 	}
 	result := args[0]
 	for _, arg := range args[1:] {
 		result = result.Add(arg)
 	}
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opSubtract(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opSubtract(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("subtract requires at least 2 arguments")
+		return nil, fmt.Errorf("subtract requires at least 2 arguments")
 	}
 	result := args[0].Sub(args[1])
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opMultiply(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opMultiply(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("multiply requires at least 2 arguments")
+		return nil, fmt.Errorf("multiply requires at least 2 arguments")
 	}
 	result := args[0]
 	for _, arg := range args[1:] {
 		result = result.Mul(arg)
 	}
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opDivide(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opDivide(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("divide requires at least 2 arguments")
+		return nil, fmt.Errorf("divide requires at least 2 arguments")
 	}
 	if args[1].IsZero() {
-		return 0, fmt.Errorf("division by zero")
+		return nil, fmt.Errorf("division by zero")
 	}
 	result := args[0].Div(args[1])
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opSum(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opSum(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, nil
+		return int64(0), nil
 	}
 	result := decimal.Zero
 	for _, arg := range args {
 		result = result.Add(arg)
 	}
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opAverage(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opAverage(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("average requires at least 1 argument")
+		return nil, fmt.Errorf("average requires at least 1 argument")
 	}
 	sum := decimal.Zero
 	for _, arg := range args {
 		sum = sum.Add(arg)
 	}
 	result := sum.Div(decimal.NewFromInt(int64(len(args))))
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opMin(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opMin(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("min requires at least 1 argument")
+		return nil, fmt.Errorf("min requires at least 1 argument")
 	}
 	result := args[0]
 	for _, arg := range args[1:] {
@@ -248,13 +268,12 @@ func (e *Engine) opMin(args []decimal.Decimal) (float64, error) {
 			result = arg
 		}
 	}
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opMax(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opMax(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("max requires at least 1 argument")
+		return nil, fmt.Errorf("max requires at least 1 argument")
 	}
 	result := args[0]
 	for _, arg := range args[1:] {
@@ -262,13 +281,12 @@ func (e *Engine) opMax(args []decimal.Decimal) (float64, error) {
 			result = arg
 		}
 	}
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opMedian(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opMedian(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("median requires at least 1 argument")
+		return nil, fmt.Errorf("median requires at least 1 argument")
 	}
 
 	// Sort a copy
@@ -288,13 +306,12 @@ func (e *Engine) opMedian(args []decimal.Decimal) (float64, error) {
 		result = sorted[mid]
 	}
 
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opStddev(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opStddev(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("stddev requires at least 2 arguments")
+		return nil, fmt.Errorf("stddev requires at least 2 arguments")
 	}
 
 	// Calculate mean
@@ -317,37 +334,35 @@ func (e *Engine) opStddev(args []decimal.Decimal) (float64, error) {
 	return math.Sqrt(varianceFloat), nil
 }
 
-func (e *Engine) opPercentage(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opPercentage(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("percentage requires 2 arguments: new, old")
+		return nil, fmt.Errorf("percentage requires 2 arguments: new, old")
 	}
 	newVal, oldVal := args[0], args[1]
 	if oldVal.IsZero() {
-		return 0, fmt.Errorf("cannot calculate percentage with zero base")
+		return nil, fmt.Errorf("cannot calculate percentage with zero base")
 	}
 	// ((new - old) / old) * 100
 	result := newVal.Sub(oldVal).Div(oldVal).Mul(decimal.NewFromInt(100))
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opROI(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opROI(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
-		return 0, fmt.Errorf("roi requires 2 arguments: gain, cost")
+		return nil, fmt.Errorf("roi requires 2 arguments: gain, cost")
 	}
 	gain, cost := args[0], args[1]
 	if cost.IsZero() {
-		return 0, fmt.Errorf("cannot calculate ROI with zero cost")
+		return nil, fmt.Errorf("cannot calculate ROI with zero cost")
 	}
 	// ((gain - cost) / cost) * 100
 	result := gain.Sub(cost).Div(cost).Mul(decimal.NewFromInt(100))
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opCompoundInterest(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opCompoundInterest(args []decimal.Decimal) (any, error) {
 	if len(args) < 3 {
-		return 0, fmt.Errorf("compound_interest requires 3 arguments: principal, rate, periods")
+		return nil, fmt.Errorf("compound_interest requires 3 arguments: principal, rate, periods")
 	}
 	principal, rate := args[0], args[1]
 	periods, _ := args[2].Float64()
@@ -361,9 +376,9 @@ func (e *Engine) opCompoundInterest(args []decimal.Decimal) (float64, error) {
 	return principalFloat * multiplier, nil
 }
 
-func (e *Engine) opPresentValue(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opPresentValue(args []decimal.Decimal) (any, error) {
 	if len(args) < 3 {
-		return 0, fmt.Errorf("present_value requires 3 arguments: future_value, rate, periods")
+		return nil, fmt.Errorf("present_value requires 3 arguments: future_value, rate, periods")
 	}
 	fv, rate := args[0], args[1]
 	periods, _ := args[2].Float64()
@@ -377,9 +392,9 @@ func (e *Engine) opPresentValue(args []decimal.Decimal) (float64, error) {
 	return fvFloat / divisor, nil
 }
 
-func (e *Engine) opRound(args []decimal.Decimal, rawArgs []any) (float64, error) {
+func (e *Engine) opRound(args []decimal.Decimal, rawArgs []any) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("round requires at least 1 argument")
+		return nil, fmt.Errorf("round requires at least 1 argument")
 	}
 
 	places := e.decimalPlaces
@@ -390,35 +405,31 @@ func (e *Engine) opRound(args []decimal.Decimal, rawArgs []any) (float64, error)
 	}
 
 	result := args[0].Round(places)
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opAbs(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opAbs(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("abs requires 1 argument")
+		return nil, fmt.Errorf("abs requires 1 argument")
 	}
 	result := args[0].Abs()
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opCeil(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opCeil(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("ceil requires 1 argument")
+		return nil, fmt.Errorf("ceil requires 1 argument")
 	}
 	result := args[0].Ceil()
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
-func (e *Engine) opFloor(args []decimal.Decimal) (float64, error) {
+func (e *Engine) opFloor(args []decimal.Decimal) (any, error) {
 	if len(args) == 0 {
-		return 0, fmt.Errorf("floor requires 1 argument")
+		return nil, fmt.Errorf("floor requires 1 argument")
 	}
 	result := args[0].Truncate(0)
-	f, _ := result.Float64()
-	return f, nil
+	return decimalToNumber(result), nil
 }
 
 func (e *Engine) opCompare(rawArgs []any) (bool, error) {

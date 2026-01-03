@@ -187,6 +187,29 @@ func (v *NoOpValidator) Validate(ctx context.Context, token string) (*Claims, er
 	}, nil
 }
 
+// APIKeyValidator validates static API keys.
+type APIKeyValidator struct {
+	apiKey string
+}
+
+// NewAPIKeyValidator creates a new API key validator.
+func NewAPIKeyValidator(apiKey string) *APIKeyValidator {
+	return &APIKeyValidator{apiKey: apiKey}
+}
+
+// Validate checks if the token matches the configured API key.
+func (v *APIKeyValidator) Validate(ctx context.Context, token string) (*Claims, error) {
+	if token != v.apiKey {
+		return nil, ErrInvalidToken
+	}
+	return &Claims{
+		Subject:   "api-key-user",
+		Scopes:    []string{"mcp:*"},
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		IssuedAt:  time.Now(),
+	}, nil
+}
+
 // contextKey is a custom type for context keys.
 type contextKey string
 

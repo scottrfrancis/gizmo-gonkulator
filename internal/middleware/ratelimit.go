@@ -2,6 +2,8 @@
 package middleware
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"sync"
@@ -10,18 +12,38 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// jsonRPCError represents a JSON-RPC error response for rate limiting.
+type jsonRPCError struct {
+	JSONRPC string           `json:"jsonrpc"`
+	ID      any              `json:"id"`
+	Error   *jsonRPCErrorObj `json:"error"`
+}
+
+type jsonRPCErrorObj struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// limiterEntry wraps a rate limiter with last access time for TTL cleanup.
+type limiterEntry struct {
+	limiter    *rate.Limiter
+	lastAccess time.Time
+}
+
 // RateLimiter provides rate limiting functionality.
 type RateLimiter struct {
-	limiters map[string]*rate.Limiter
+	limiters map[string]*limiterEntry
 	mu       sync.RWMutex
 	rate     rate.Limit
 	burst    int
+	ttl      time.Duration
 }
 
 // RateLimiterConfig configures the rate limiter.
 type RateLimiterConfig struct {
 	RequestsPerMinute int
 	BurstSize         int
+	TTL               time.Duration // How long to keep unused limiters
 }
 
 // DefaultRateLimiterConfig returns default rate limiter configuration.
@@ -29,6 +51,7 @@ func DefaultRateLimiterConfig() RateLimiterConfig {
 	return RateLimiterConfig{
 		RequestsPerMinute: 60,
 		BurstSize:         10,
+		TTL:               10 * time.Minute,
 	}
 }
 
@@ -40,34 +63,46 @@ func NewRateLimiter(config RateLimiterConfig) *RateLimiter {
 	if config.BurstSize == 0 {
 		config.BurstSize = 10
 	}
+	if config.TTL == 0 {
+		config.TTL = 10 * time.Minute
+	}
 
 	return &RateLimiter{
-		limiters: make(map[string]*rate.Limiter),
+		limiters: make(map[string]*limiterEntry),
 		rate:     rate.Limit(float64(config.RequestsPerMinute) / 60.0),
 		burst:    config.BurstSize,
+		ttl:      config.TTL,
 	}
 }
 
 // getLimiter gets or creates a rate limiter for a key.
 func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 	rl.mu.RLock()
-	limiter, exists := rl.limiters[key]
+	entry, exists := rl.limiters[key]
 	rl.mu.RUnlock()
 
 	if exists {
-		return limiter
+		// Update last access time
+		rl.mu.Lock()
+		entry.lastAccess = time.Now()
+		rl.mu.Unlock()
+		return entry.limiter
 	}
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	// Double-check after acquiring write lock
-	if limiter, exists = rl.limiters[key]; exists {
-		return limiter
+	if entry, exists = rl.limiters[key]; exists {
+		entry.lastAccess = time.Now()
+		return entry.limiter
 	}
 
-	limiter = rate.NewLimiter(rl.rate, rl.burst)
-	rl.limiters[key] = limiter
+	limiter := rate.NewLimiter(rl.rate, rl.burst)
+	rl.limiters[key] = &limiterEntry{
+		limiter:    limiter,
+		lastAccess: time.Now(),
+	}
 	return limiter
 }
 
@@ -108,12 +143,22 @@ func (rl *RateLimiter) Middleware(keyFunc func(*http.Request) string) func(http.
 			if !rl.Allow(key) {
 				info := rl.GetInfo(key)
 
+				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("X-RateLimit-Limit", strconv.Itoa(info.Limit))
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(info.Reset.Unix(), 10))
 				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusTooManyRequests)
 
-				http.Error(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32000,"message":"Rate limit exceeded. Retry after 60 seconds."}}`, http.StatusTooManyRequests)
+				// Use proper JSON encoding for consistency
+				json.NewEncoder(w).Encode(jsonRPCError{
+					JSONRPC: "2.0",
+					ID:      nil,
+					Error: &jsonRPCErrorObj{
+						Code:    -32000,
+						Message: "Rate limit exceeded. Retry after 60 seconds.",
+					},
+				})
 				return
 			}
 
@@ -133,11 +178,29 @@ func (rl *RateLimiter) Cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	// Reset all limiters periodically
-	// In production, you'd want to track last access time
-	if len(rl.limiters) > 10000 {
-		rl.limiters = make(map[string]*rate.Limiter)
+	now := time.Now()
+	for key, entry := range rl.limiters {
+		if now.Sub(entry.lastAccess) > rl.ttl {
+			delete(rl.limiters, key)
+		}
 	}
+}
+
+// StartCleanup starts a background goroutine that periodically cleans up expired limiters.
+func (rl *RateLimiter) StartCleanup(ctx context.Context, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				rl.Cleanup()
+			}
+		}
+	}()
 }
 
 // GetRateLimitKey extracts the rate limit key from a request.

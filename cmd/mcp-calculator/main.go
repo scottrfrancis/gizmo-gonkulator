@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -61,6 +62,28 @@ func main() {
 		cfg.EnableRateLimiter = false
 	}
 
+	// Auth configuration
+	// API key auth (simpler alternative to OAuth)
+	if v := os.Getenv("MCP_API_KEY"); v != "" {
+		cfg.APIKey = v
+	}
+	// OAuth configuration (used if API key not set)
+	if v := os.Getenv("MCP_OAUTH_ENABLED"); v == "true" {
+		cfg.AuthEnabled = true
+	}
+	if v := os.Getenv("MCP_OAUTH_ISSUER"); v != "" {
+		cfg.AuthIssuer = v
+	}
+	if v := os.Getenv("MCP_OAUTH_AUDIENCE"); v != "" {
+		cfg.AuthAudience = v
+	}
+	if v := os.Getenv("MCP_OAUTH_JWKS_URL"); v != "" {
+		cfg.AuthJWKSURL = v
+	}
+	if v := os.Getenv("MCP_OAUTH_SCOPES"); v != "" {
+		cfg.AuthScopes = strings.Split(v, ",")
+	}
+
 	// Determine address
 	listenHost := *host
 	if listenHost == "" {
@@ -109,6 +132,9 @@ func main() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+
+		// Shutdown MCP server (stops cleanup goroutines)
+		srv.Shutdown()
 
 		httpServer.SetKeepAlivesEnabled(false)
 		if err := httpServer.Shutdown(ctx); err != nil {

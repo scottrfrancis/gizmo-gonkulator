@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/scottrfrancis/mcp-calculator/internal/auth"
 	"github.com/scottrfrancis/mcp-calculator/internal/calculator"
 	"github.com/scottrfrancis/mcp-calculator/internal/middleware"
 	"github.com/scottrfrancis/mcp-calculator/internal/session"
@@ -27,6 +28,61 @@ const (
 	// ProtocolVersion is the supported MCP protocol version.
 	ProtocolVersion = "2025-03-26"
 )
+
+// cachedToolSchema is the pre-built tool schema for tools/list responses.
+// Built once at package init to avoid rebuilding on every request.
+var cachedToolSchema = []map[string]any{
+	{
+		"name": "calculate",
+		"description": "Perform precise arithmetic calculations using Decimal precision. " +
+			"Use this tool for ALL math operations - never calculate in your response. " +
+			"Supports batch operations: add, subtract, multiply, divide, sum, average, " +
+			"percentage, round, min, max, median, stddev, compare, abs, ceil, floor, " +
+			"roi, compound_interest, present_value. " +
+			"Results can reference previous calculations by name.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"calculations": map[string]any{
+					"type":        "array",
+					"description": "List of calculations to perform",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"name": map[string]any{
+								"type":        "string",
+								"description": "Label for the result (can be referenced by later calculations)",
+							},
+							"operation": map[string]any{
+								"type": "string",
+								"enum": []string{
+									"add", "subtract", "multiply", "divide",
+									"sum", "average", "percentage", "round",
+									"min", "max", "median", "stddev",
+									"compare", "abs", "ceil", "floor",
+									"roi", "compound_interest", "present_value",
+								},
+								"description": "Operation to perform",
+							},
+							"args": map[string]any{
+								"type": "array",
+								"items": map[string]any{
+									"oneOf": []map[string]any{
+										{"type": "number"},
+										{"type": "string", "description": "Reference to previous result by name"},
+									},
+								},
+								"description": "Numeric arguments or references to previous results",
+							},
+						},
+						"required": []string{"operation", "args"},
+					},
+				},
+			},
+			"required": []string{"calculations"},
+		},
+	},
+}
 
 // JSON-RPC error codes.
 const (
@@ -61,11 +117,16 @@ type JSONRPCError struct {
 
 // Server is the MCP server.
 type Server struct {
-	sessions    session.Store
-	rateLimiter *middleware.RateLimiter
-	logger      *slog.Logger
-	startTime   time.Time
-	mu          sync.RWMutex
+	sessions      session.Store
+	rateLimiter   *middleware.RateLimiter
+	authValidator auth.Validator
+	authScopes    []string
+	maxBodySize   int64
+	metrics       *middleware.Metrics
+	logger        *slog.Logger
+	startTime     time.Time
+	cancelCleanup context.CancelFunc
+	mu            sync.RWMutex
 }
 
 // Config holds server configuration.
@@ -75,6 +136,18 @@ type Config struct {
 	RateLimit         int
 	RateLimitBurst    int
 	EnableRateLimiter bool
+	// Auth configuration
+	AuthEnabled    bool
+	AuthIssuer     string
+	AuthAudience   string
+	AuthJWKSURL    string
+	AuthScopes     []string
+	AuthAlgorithms []string
+	APIKey         string // Static API key (simpler than OAuth)
+	// Request limits
+	MaxBodySize int64
+	// Metrics
+	EnableMetrics bool
 }
 
 // DefaultConfig returns default server configuration.
@@ -85,6 +158,10 @@ func DefaultConfig() Config {
 		RateLimit:         60,
 		RateLimitBurst:    10,
 		EnableRateLimiter: true,
+		AuthEnabled:       false,
+		AuthAlgorithms:    []string{"RS256", "ES256"},
+		MaxBodySize:       1 << 20, // 1MB default
+		EnableMetrics:     true,
 	}
 }
 
@@ -104,8 +181,8 @@ func NewWithConfig(cfg Config) *Server {
 		MaxSize: cfg.MaxSessions,
 	})
 
-	// Start session cleanup
-	ctx := context.Background()
+	// Start session cleanup with cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
 	sessionStore.StartCleanup(ctx, time.Minute)
 
 	var rateLimiter *middleware.RateLimiter
@@ -114,13 +191,42 @@ func NewWithConfig(cfg Config) *Server {
 			RequestsPerMinute: cfg.RateLimit,
 			BurstSize:         cfg.RateLimitBurst,
 		})
+		// Start rate limiter cleanup with the same context
+		rateLimiter.StartCleanup(ctx, time.Minute)
+	}
+
+	// Create auth validator
+	var authValidator auth.Validator
+	if cfg.APIKey != "" {
+		// API key auth takes precedence (simpler than OAuth)
+		authValidator = auth.NewAPIKeyValidator(cfg.APIKey)
+		logger.Info("API key authentication enabled")
+	} else if cfg.AuthEnabled {
+		authValidator = auth.NewJWTValidator(auth.JWTValidatorConfig{
+			Issuer:     cfg.AuthIssuer,
+			Audience:   cfg.AuthAudience,
+			JWKSURL:    cfg.AuthJWKSURL,
+			Algorithms: cfg.AuthAlgorithms,
+		})
+		logger.Info("OAuth authentication enabled", "issuer", cfg.AuthIssuer)
+	}
+
+	// Create metrics collector
+	var metrics *middleware.Metrics
+	if cfg.EnableMetrics {
+		metrics = middleware.NewMetrics()
 	}
 
 	return &Server{
-		sessions:    sessionStore,
-		rateLimiter: rateLimiter,
-		logger:      logger,
-		startTime:   time.Now(),
+		sessions:      sessionStore,
+		rateLimiter:   rateLimiter,
+		authValidator: authValidator,
+		authScopes:    cfg.AuthScopes,
+		maxBodySize:   cfg.MaxBodySize,
+		metrics:       metrics,
+		logger:        logger,
+		startTime:     time.Now(),
+		cancelCleanup: cancel,
 	}
 }
 
@@ -134,36 +240,69 @@ func (s *Server) Handler() http.Handler {
 	r.Use(chimiddleware.Recoverer)
 	r.Use(s.loggingMiddleware)
 
-	// Health endpoints
+	// Health endpoints (no auth required)
 	r.Get("/health", s.handleHealth)
 	r.Get("/ready", s.handleReady)
 
-	// MCP endpoint with rate limiting
-	mcpHandler := http.HandlerFunc(s.handleMCP)
-	if s.rateLimiter != nil {
-		rateLimited := s.rateLimiter.Middleware(middleware.GetRateLimitKey)(mcpHandler)
-		r.Handle("/mcp", rateLimited)
-	} else {
-		r.Handle("/mcp", mcpHandler)
+	// Metrics endpoint (no auth required)
+	if s.metrics != nil {
+		r.Get("/metrics", s.metrics.Handler())
 	}
+
+	// MCP endpoint with optional auth and rate limiting
+	mcpHandler := http.HandlerFunc(s.handleMCP)
+
+	// Build middleware chain for MCP endpoint
+	var handler http.Handler = mcpHandler
+
+	// Apply rate limiting if enabled
+	if s.rateLimiter != nil {
+		handler = s.rateLimiter.Middleware(middleware.GetRateLimitKey)(handler)
+	}
+
+	// Apply auth if enabled
+	if s.authValidator != nil {
+		handler = auth.Middleware(s.authValidator, s.authScopes)(handler)
+	}
+
+	r.Handle("/mcp", handler)
 
 	return r
 }
 
-// loggingMiddleware logs requests.
+// Shutdown gracefully shuts down the server.
+func (s *Server) Shutdown() {
+	if s.cancelCleanup != nil {
+		s.cancelCleanup()
+	}
+}
+
+// loggingMiddleware logs requests and records metrics.
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ww := chimiddleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
 
+		duration := time.Since(start)
+
 		s.logger.Info("request completed",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", ww.Status(),
-			"duration_ms", time.Since(start).Milliseconds(),
+			"duration_ms", duration.Milliseconds(),
 			"session_id", r.Header.Get("Mcp-Session-Id"),
 		)
+
+		// Record metrics
+		if s.metrics != nil {
+			s.metrics.RecordRequest(r.URL.Path, duration)
+
+			// Update session count
+			if count, err := s.sessions.Count(r.Context()); err == nil {
+				s.metrics.SetActiveSessions(int64(count))
+			}
+		}
 	})
 }
 
@@ -220,9 +359,20 @@ func (s *Server) handleMCPDelete(w http.ResponseWriter, r *http.Request) {
 
 // handleMCPPost handles MCP POST requests.
 func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request) {
+	// Apply body size limit to prevent DoS
+	if s.maxBodySize > 0 {
+		r.Body = http.MaxBytesReader(w, r.Body, s.maxBodySize)
+	}
+
 	// Parse request
 	var req JSONRPCRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Check if it's a body too large error
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			s.sendError(w, nil, ErrCodeInvalidRequest, "Request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		s.sendError(w, nil, ErrCodeParseError, "Parse error: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -350,62 +500,12 @@ func (s *Server) handleNotification(w http.ResponseWriter, r *http.Request, req 
 func (s *Server) handleToolsList(w http.ResponseWriter, req JSONRPCRequest) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Use cached tool schema to avoid rebuilding on every request
 	resp := JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result: map[string]any{
-			"tools": []map[string]any{
-				{
-					"name": "calculate",
-					"description": "Perform precise arithmetic calculations using Decimal precision. " +
-						"Use this tool for ALL math operations - never calculate in your response. " +
-						"Supports batch operations: add, subtract, multiply, divide, sum, average, " +
-						"percentage, round, min, max, median, stddev, compare, abs, ceil, floor, " +
-						"roi, compound_interest, present_value. " +
-						"Results can reference previous calculations by name.",
-					"inputSchema": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"calculations": map[string]any{
-								"type":        "array",
-								"description": "List of calculations to perform",
-								"items": map[string]any{
-									"type": "object",
-									"properties": map[string]any{
-										"name": map[string]any{
-											"type":        "string",
-											"description": "Label for the result (can be referenced by later calculations)",
-										},
-										"operation": map[string]any{
-											"type": "string",
-											"enum": []string{
-												"add", "subtract", "multiply", "divide",
-												"sum", "average", "percentage", "round",
-												"min", "max", "median", "stddev",
-												"compare", "abs", "ceil", "floor",
-												"roi", "compound_interest", "present_value",
-											},
-											"description": "Operation to perform",
-										},
-										"args": map[string]any{
-											"type": "array",
-											"items": map[string]any{
-												"oneOf": []map[string]any{
-													{"type": "number"},
-													{"type": "string", "description": "Reference to previous result by name"},
-												},
-											},
-											"description": "Numeric arguments or references to previous results",
-										},
-									},
-									"required": []string{"operation", "args"},
-								},
-							},
-						},
-						"required": []string{"calculations"},
-					},
-				},
-			},
+			"tools": cachedToolSchema,
 		},
 	}
 
@@ -500,6 +600,11 @@ func (s *Server) executeCalculate(arguments map[string]any) (map[string]any, boo
 
 // sendError sends a JSON-RPC error response.
 func (s *Server) sendError(w http.ResponseWriter, id any, code int, message string, httpStatus int) {
+	// Record error in metrics
+	if s.metrics != nil {
+		s.metrics.RecordError(code)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(httpStatus)
 
