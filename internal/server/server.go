@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -126,7 +125,6 @@ type Server struct {
 	logger        *slog.Logger
 	startTime     time.Time
 	cancelCleanup context.CancelFunc
-	mu            sync.RWMutex
 }
 
 // Config holds server configuration.

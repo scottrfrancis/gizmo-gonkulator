@@ -26,12 +26,12 @@ type ClientInfo struct {
 
 // Session represents an MCP session.
 type Session struct {
-	ID           string                 `json:"id"`
-	CreatedAt    time.Time              `json:"created_at"`
-	LastActivity time.Time              `json:"last_activity"`
-	ClientInfo   ClientInfo             `json:"client_info"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
-	Initialized  bool                   `json:"initialized"`
+	ID           string         `json:"id"`
+	CreatedAt    time.Time      `json:"created_at"`
+	LastActivity time.Time      `json:"last_activity"`
+	ClientInfo   ClientInfo     `json:"client_info"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	Initialized  bool           `json:"initialized"`
 }
 
 // Store defines the interface for session storage.
@@ -113,7 +113,7 @@ func (s *MemoryStore) Create(ctx context.Context, clientInfo ClientInfo) (*Sessi
 		CreatedAt:    now,
 		LastActivity: now,
 		ClientInfo:   clientInfo,
-		Metadata:     make(map[string]interface{}),
+		Metadata:     make(map[string]any),
 		Initialized:  false,
 	}
 
