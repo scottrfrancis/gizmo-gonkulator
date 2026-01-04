@@ -32,7 +32,7 @@ type Claims struct {
 	Scopes    []string
 	ExpiresAt time.Time
 	IssuedAt  time.Time
-	Extra     map[string]interface{}
+	Extra     map[string]any
 }
 
 // HasScope checks if the claims include a specific scope.
@@ -170,7 +170,7 @@ func (v *JWTValidator) Validate(ctx context.Context, token string) (*Claims, err
 		Scopes:    scopes,
 		ExpiresAt: parsed.Expiration(),
 		IssuedAt:  parsed.IssuedAt(),
-		Extra:     make(map[string]interface{}),
+		Extra:     make(map[string]any),
 	}, nil
 }
 

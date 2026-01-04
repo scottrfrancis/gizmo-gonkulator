@@ -6,7 +6,7 @@
 
 **Precise Arithmetic for AI Agents**
 
-A Model Context Protocol (MCP) server that eliminates AI math errors by providing deterministic arithmetic operations using Python's Decimal module.
+A Model Context Protocol (MCP) server that eliminates AI math errors by providing deterministic arithmetic operations using Decimal precision.
 
 ## The Problem
 
@@ -21,49 +21,49 @@ LLMs confidently produce wrong arithmetic. This isn't ignorance—language model
 
 **Observed error rate:** 10-20% when AI does math vs. 0% with this tool.
 
-## Installation
-
-```bash
-pip install mcp-calculator
-```
-
 ## Quick Start
 
-### As an MCP Server
+### Running the Server
 
-Add to your MCP configuration (e.g., Claude Desktop):
+```bash
+# Using Go
+go run ./cmd/mcp-calculator
+
+# Using Docker
+docker run -p 8080:8080 mcp-calculator
+
+# Using Make
+make run
+```
+
+### MCP Client Configuration
+
+Add to your MCP client configuration (e.g., Claude Desktop):
 
 ```json
 {
   "mcpServers": {
     "calculator": {
-      "command": "python",
-      "args": ["-m", "mcp_calculator"]
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
 ```
 
-### As a Python Library
+### Example Request
 
-```python
-from mcp_calculator import calculate
-
-result = calculate([
-    {"name": "total", "operation": "sum", "args": [100, 200, 300]},
-    {"name": "average", "operation": "average", "args": [100, 200, 300]},
-    {"name": "growth", "operation": "percentage", "args": [150, 100]}
-])
-
-print(result)
-# {
-#   "success": True,
-#   "results": {
-#     "total": 600.0,
-#     "average": 200.0,
-#     "growth": 50.0
-#   }
-# }
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "clientInfo": {"name": "curl", "version": "1.0"}
+    }
+  }'
 ```
 
 ## Supported Operations
@@ -101,25 +101,24 @@ print(result)
 
 Calculations can reference previous results by name:
 
-```python
-result = calculate([
+```json
+{
+  "calculations": [
     {"name": "oct_rate", "operation": "divide", "args": [2561276, 8]},
     {"name": "sep_rate", "operation": "divide", "args": [8782334, 21]},
     {"name": "change", "operation": "percentage", "args": ["oct_rate", "sep_rate"]}
-])
-# oct_rate and sep_rate are computed, then used in the percentage calculation
+  ]
+}
 ```
 
 ## Why Decimal Precision?
 
-```python
-# Float (IEEE 754) - imprecise
->>> 0.1 + 0.2
-0.30000000000000004
+```
+// Float (IEEE 754) - imprecise
+0.1 + 0.2 = 0.30000000000000004
 
-# mcp-calculator (Decimal) - exact
->>> calculate([{"operation": "add", "args": [0.1, 0.2]}])
-{"results": {"result_0": 0.3}}
+// mcp-calculator (Decimal) - exact
+0.1 + 0.2 = 0.3
 ```
 
 For financial applications, floating-point errors are unacceptable.
@@ -128,38 +127,97 @@ For financial applications, floating-point errors are unacceptable.
 
 Errors are returned per-calculation, not as exceptions:
 
-```python
-result = calculate([
-    {"name": "valid", "operation": "sum", "args": [1, 2, 3]},
-    {"name": "error", "operation": "divide", "args": [100, 0]}
-])
-# {
-#   "success": True,
-#   "results": {
-#     "valid": 6.0,
-#     "error": {"error": "division by zero"}
-#   }
-# }
+```json
+{
+  "success": true,
+  "results": {
+    "valid": 6,
+    "error": {"error": "division by zero"}
+  }
+}
 ```
 
-## Self-Test
+## Configuration
 
-```bash
-python -m mcp_calculator --test
-```
+The server is configured via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_HOST` | `0.0.0.0` | Host to bind to |
+| `MCP_PORT` | `8080` | Port to listen on |
+| `MCP_SESSION_TIMEOUT` | `10m` | Session timeout duration |
+| `MCP_MAX_SESSIONS` | `10000` | Maximum concurrent sessions |
+| `MCP_RATE_LIMIT` | `60` | Requests per minute |
+| `MCP_RATE_LIMIT_BURST` | `10` | Burst size for rate limiting |
+| `MCP_API_KEY` | (none) | API key for authentication |
+
+## Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/mcp` | POST | MCP JSON-RPC endpoint |
+| `/mcp` | DELETE | Delete session |
+| `/health` | GET | Health check |
+| `/ready` | GET | Readiness probe |
+| `/metrics` | GET | Prometheus metrics |
 
 ## Development
 
 ```bash
-# Clone and install
-git clone https://github.com/your-org/mcp-calculator
+# Clone and build
+git clone https://github.com/scottrfrancis/mcp-calculator
 cd mcp-calculator
-pip install -e ".[dev]"
+
+# Install dependencies
+make deps
 
 # Run tests
-pytest tests/
+make test
 
-# Run self-test
+# Run with race detection
+go test -race ./...
+
+# Build binary
+make build
+
+# Run locally
+make run
+```
+
+## Project Structure
+
+```
+mcp-calculator/
+├── cmd/mcp-calculator/     # Server entry point
+├── internal/
+│   ├── calculator/         # Decimal arithmetic engine
+│   ├── server/             # MCP server implementation
+│   ├── session/            # Session management
+│   ├── auth/               # OAuth/API key authentication
+│   └── middleware/         # Rate limiting, metrics
+├── test/                   # Test suites
+├── spec/                   # Protocol specifications
+├── docs/                   # Documentation
+└── reference/              # Python reference implementation
+```
+
+## Architecture
+
+- **Protocol:** MCP 2025-03-26 (Streamable HTTP)
+- **Precision:** Decimal arithmetic via `shopspring/decimal`
+- **Concurrency:** Goroutine-safe with RWMutex
+- **Authentication:** OAuth 2.1 or API key
+- **Rate Limiting:** Token bucket per session/IP
+
+See [DESIGN_AND_ARCHITECTURE.md](docs/DESIGN_AND_ARCHITECTURE.md) for details.
+
+## Python Reference Implementation
+
+A Python reference implementation is available in the `reference/` directory for testing and development purposes.
+
+```bash
+cd reference
+pip install -e ".[dev]"
 python -m mcp_calculator --test
 ```
 
