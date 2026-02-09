@@ -4,11 +4,13 @@
 
 | Setting | Value |
 |---------|-------|
-| **Server URL** | `https://mcp.local.example/calc` |
+| **Server URL** | `https://mcp.example.com/calc` |
 | **API Key** | `REDACTED-rotate-this-key` |
 | **Auth Header** | `X-API-Key: REDACTED-rotate-this-key` |
 | **Protocol** | MCP 2025-03-26 (Streamable HTTP) |
-| **Direct Access** | `http://192.168.4.6:8080` (internal only, no auth) |
+| **EC2 Instance** | `i-07f420b768f425ed9` (us-east-2) |
+
+> **Local Development:** Use `mcp.local.example` for local testing with your-host.
 
 ---
 
@@ -17,7 +19,7 @@
 ### 1.1 Health Check (requires API key via nginx)
 
 ```bash
-curl -s https://mcp.local.example/calc/health \
+curl -s https://mcp.example.com/calc/health \
   -H "X-API-Key: REDACTED-rotate-this-key" | jq .
 ```
 
@@ -34,7 +36,7 @@ Expected response:
 ### 1.2 Initialize a Session
 
 ```bash
-curl -s -i -X POST "https://mcp.local.example/calc/mcp" \
+curl -s -i -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: REDACTED-rotate-this-key" \
   -d '{
@@ -57,7 +59,7 @@ curl -s -i -X POST "https://mcp.local.example/calc/mcp" \
 export SESSION_ID="14938f48-2065-44ed-9b56-a58dbcfe54b4"  # Replace with actual SESSION_ID from the previous response
 
 # Replace SESSION_ID with the value from step 1.2
-curl -s -X POST "https://mcp.local.example/calc/mcp" \
+curl -s -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: REDACTED-rotate-this-key" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
@@ -71,7 +73,7 @@ curl -s -X POST "https://mcp.local.example/calc/mcp" \
 ### 1.4 Simple Calculation (0.1 + 0.2)
 
 ```bash
-curl -s -X POST "https://mcp.local.example/calc/mcp" \
+curl -s -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: REDACTED-rotate-this-key" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
@@ -95,7 +97,7 @@ Expected: `{"results":{"result":0.3},"success":true}`
 ### 1.5 Batch Calculation with References
 
 ```bash
-curl -s -X POST "https://mcp.local.example/calc/mcp" \
+curl -s -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: REDACTED-rotate-this-key" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
@@ -123,7 +125,7 @@ Save as `~/test-mcp.sh`:
 
 ```bash
 #!/bin/bash
-SERVER="https://mcp.local.example/calc"
+SERVER="https://mcp.example.com/calc"
 API_KEY="REDACTED-rotate-this-key"
 
 echo "=== Health Check ==="
@@ -174,7 +176,7 @@ Add this configuration (Claude Desktop uses `mcp-remote` for HTTPS servers):
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://mcp.local.example/calc/mcp",
+        "https://mcp.example.com/calc/mcp",
         "--header", "X-API-Key: REDACTED-rotate-this-key"
       ],
       "env": {
@@ -291,20 +293,27 @@ The session expired or you're using an invalid session ID. Re-run the `initializ
 ### Claude Desktop doesn't show the calculator
 
 1. Check the config file syntax (valid JSON)
-2. Ensure the server is running: `curl -s https://mcp.local.example/calc/health -H "X-API-Key: REDACTED-rotate-this-key"`
+2. Ensure the server is running: `curl -s https://mcp.example.com/calc/health -H "X-API-Key: REDACTED-rotate-this-key"`
 3. Restart Claude Desktop completely (quit, not just close window)
 
 ### Connection refused
 
-The server may be down. SSH to your-host and check:
+The server may be down. Check EC2 instance status:
 
 ```bash
-ssh scott@your-host "docker ps | grep mcp-calculator"
-ssh scott@your-host "docker logs mcp-calculator --tail 20"
+# Check EC2 status
+AWS_PROFILE=ai-lab aws ec2 describe-instances --instance-ids i-07f420b768f425ed9 \
+  --query 'Reservations[0].Instances[0].State.Name' --region us-east-2
+
+# Start EC2 if stopped
+AWS_PROFILE=ai-lab aws ec2 start-instances --instance-ids i-07f420b768f425ed9 --region us-east-2
+
+# Check logs via SSM
+AWS_PROFILE=ai-lab aws ssm send-command \
+  --instance-ids i-07f420b768f425ed9 \
+  --document-name "AWS-RunShellScript" \
+  --parameters commands="docker logs mcp-calculator --tail 20" \
+  --region us-east-2
 ```
 
-To restart the stack:
-
-```bash
-ssh scott@your-host "cd <your deployment dir> && docker compose restart"
-```
+**Local development:** For local testing with your-host, use `mcp.local.example` instead (requires MCP services running locally).
