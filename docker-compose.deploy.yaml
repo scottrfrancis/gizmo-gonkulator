@@ -16,7 +16,7 @@ services:
       - MCP_RATE_LIMIT=60
       - MCP_RATE_LIMIT_BURST=10
       # API key authentication
-      - MCP_API_KEY=mcp-calc-secret-key-2026
+      - MCP_API_KEY=${MCP_CALC_API_KEY}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s

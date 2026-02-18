@@ -5,8 +5,8 @@
 | Setting | Value |
 |---------|-------|
 | **Server URL** | `https://catalyst-mcp-ec2.scootersoft.info/calc` |
-| **API Key** | `mcp-calc-secret-key-2026` |
-| **Auth Header** | `X-API-Key: mcp-calc-secret-key-2026` |
+| **API Key** | `$MCP_CALC_API_KEY` |
+| **Auth Header** | `X-API-Key: $MCP_CALC_API_KEY` |
 | **Protocol** | MCP 2025-03-26 (Streamable HTTP) |
 | **EC2 Instance** | `i-07f420b768f425ed9` (us-east-2) |
 
@@ -20,7 +20,7 @@
 
 ```bash
 curl -s https://catalyst-mcp-ec2.scootersoft.info/calc/health \
-  -H "X-API-Key: mcp-calc-secret-key-2026" | jq .
+  -H "X-API-Key: $MCP_CALC_API_KEY" | jq .
 ```
 
 Expected response:
@@ -38,7 +38,7 @@ Expected response:
 ```bash
 curl -s -i -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: mcp-calc-secret-key-2026" \
+  -H "X-API-Key: $MCP_CALC_API_KEY" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -61,7 +61,7 @@ export SESSION_ID="14938f48-2065-44ed-9b56-a58dbcfe54b4"  # Replace with actual 
 # Replace SESSION_ID with the value from step 1.2
 curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: mcp-calc-secret-key-2026" \
+  -H "X-API-Key: $MCP_CALC_API_KEY" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
   -d '{
     "jsonrpc": "2.0",
@@ -75,7 +75,7 @@ curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
 ```bash
 curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: mcp-calc-secret-key-2026" \
+  -H "X-API-Key: $MCP_CALC_API_KEY" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
   -d '{
     "jsonrpc": "2.0",
@@ -99,7 +99,7 @@ Expected: `{"results":{"result":0.3},"success":true}`
 ```bash
 curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: mcp-calc-secret-key-2026" \
+  -H "X-API-Key: $MCP_CALC_API_KEY" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
   -d '{
     "jsonrpc": "2.0",
@@ -126,7 +126,7 @@ Save as `~/test-mcp.sh`:
 ```bash
 #!/bin/bash
 SERVER="https://catalyst-mcp-ec2.scootersoft.info/calc"
-API_KEY="mcp-calc-secret-key-2026"
+API_KEY="$MCP_CALC_API_KEY"
 
 echo "=== Health Check ==="
 curl -s "$SERVER/health" -H "X-API-Key: $API_KEY" | jq .
@@ -177,7 +177,7 @@ Add this configuration (Claude Desktop uses `mcp-remote` for HTTPS servers):
       "args": [
         "mcp-remote",
         "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp",
-        "--header", "X-API-Key: mcp-calc-secret-key-2026"
+        "--header", "X-API-Key: $MCP_CALC_API_KEY"
       ],
       "env": {
         "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
@@ -283,7 +283,7 @@ Use the calculator to find:
 You forgot the `X-API-Key` header. Add:
 
 ```sh
--H "X-API-Key: mcp-calc-secret-key-2026"
+-H "X-API-Key: $MCP_CALC_API_KEY"
 ```
 
 ### "Session not found"
@@ -293,7 +293,7 @@ The session expired or you're using an invalid session ID. Re-run the `initializ
 ### Claude Desktop doesn't show the calculator
 
 1. Check the config file syntax (valid JSON)
-2. Ensure the server is running: `curl -s https://catalyst-mcp-ec2.scootersoft.info/calc/health -H "X-API-Key: mcp-calc-secret-key-2026"`
+2. Ensure the server is running: `curl -s https://catalyst-mcp-ec2.scootersoft.info/calc/health -H "X-API-Key: $MCP_CALC_API_KEY"`
 3. Restart Claude Desktop completely (quit, not just close window)
 
 ### Connection refused
