@@ -209,7 +209,12 @@ func (e *Engine) opSubtract(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("subtract requires at least 2 arguments")
 	}
-	result := args[0].Sub(args[1])
+	// Variadic: subtract every arg after the first from the running result.
+	// Matches add/multiply's left-fold semantics so subtract(a, b, c) is a-b-c.
+	result := args[0]
+	for _, arg := range args[1:] {
+		result = result.Sub(arg)
+	}
 	return decimalToNumber(result), nil
 }
 
@@ -228,10 +233,15 @@ func (e *Engine) opDivide(args []decimal.Decimal) (any, error) {
 	if len(args) < 2 {
 		return nil, fmt.Errorf("divide requires at least 2 arguments")
 	}
-	if args[1].IsZero() {
-		return nil, fmt.Errorf("division by zero")
+	// Variadic: divide by every arg after the first (left-fold). Matches
+	// the symmetry with subtract's variadic semantics.
+	result := args[0]
+	for _, arg := range args[1:] {
+		if arg.IsZero() {
+			return nil, fmt.Errorf("division by zero")
+		}
+		result = result.Div(arg)
 	}
-	result := args[0].Div(args[1])
 	return decimalToNumber(result), nil
 }
 
