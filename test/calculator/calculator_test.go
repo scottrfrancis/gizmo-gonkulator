@@ -50,6 +50,29 @@ func TestBasicOperations(t *testing.T) {
 		assertNumericEqual(t, 300.0, result.Results["diff"])
 	})
 
+	// Regression: subtract previously dropped args[2:], so passing
+	// [a, b, c] returned a-b instead of a-b-c. The narrative-generation
+	// path frequently calls e.g. subtract(total, COVID, PATH) to compute
+	// excluding-COVID/PATH aggregates and was silently getting wrong
+	// answers.
+	t.Run("subtract_variadic_three_args", func(t *testing.T) {
+		// 1343 - 3 - 418 = 922 (the Vikor/Example-1A excl-COVID/PATH case).
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "excl", Operation: "subtract", Args: []any{1343, 3, 418}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 922.0, result.Results["excl"])
+	})
+
+	t.Run("subtract_variadic_four_args", func(t *testing.T) {
+		// 1000 - 100 - 50 - 25 = 825
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "diff", Operation: "subtract", Args: []any{1000, 100, 50, 25}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 825.0, result.Results["diff"])
+	})
+
 	t.Run("multiply", func(t *testing.T) {
 		result := calculator.Calculate([]calculator.Calculation{
 			{Name: "prod", Operation: "multiply", Args: []any{10, 5}},
@@ -64,6 +87,16 @@ func TestBasicOperations(t *testing.T) {
 		})
 		assert.True(t, result.Success)
 		assertNumericEqual(t, 25.0, result.Results["quot"])
+	})
+
+	// Regression: divide previously dropped args[2:] (same shape as
+	// the subtract bug). 100 / 4 / 5 must be 5.0 (left-fold), not 25.0.
+	t.Run("divide_variadic_three_args", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "quot", Operation: "divide", Args: []any{100, 4, 5}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 5.0, result.Results["quot"])
 	})
 
 	t.Run("sum", func(t *testing.T) {
