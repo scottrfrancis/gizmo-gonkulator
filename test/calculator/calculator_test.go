@@ -544,3 +544,317 @@ func TestEdgeCases(t *testing.T) {
 		assert.True(t, math.IsInf(val, 1) || val > 1e300 || val == 0, "expected infinity, large number, or 0 for overflow")
 	})
 }
+
+// =====================================================================
+// Coverage expansion — locks down behaviors that work today but lacked
+// targeted test coverage. Bundled here so the file's earlier sections
+// can be read as the original behavioral spec; this section is the
+// regression net underneath it.
+// =====================================================================
+
+// TestVariadicLeftFoldOps verifies that the four left-fold operations
+// — add, multiply (subtract and divide are similar but tested separately
+// where they regressed) — accept and correctly fold over more than two
+// arguments. A 2-arg-only test passes even if the loop is broken;
+// 3+ args proves the args[1:] traversal actually runs.
+func TestVariadicLeftFoldOps(t *testing.T) {
+	t.Run("add_three_args", func(t *testing.T) {
+		// 100 + 200 + 300 = 600
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "sum", Operation: "add", Args: []any{100, 200, 300}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 600.0, result.Results["sum"])
+	})
+
+	t.Run("add_five_args_with_negatives", func(t *testing.T) {
+		// 10 + (-5) + 3 + (-1) + 4 = 11. Mix of signs ensures the loop
+		// neither short-circuits on a non-positive nor accumulates abs.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "n", Operation: "add", Args: []any{10, -5, 3, -1, 4}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 11.0, result.Results["n"])
+	})
+
+	t.Run("multiply_three_args", func(t *testing.T) {
+		// 2 * 3 * 4 = 24
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "p", Operation: "multiply", Args: []any{2, 3, 4}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 24.0, result.Results["p"])
+	})
+
+	t.Run("multiply_four_args_with_negative", func(t *testing.T) {
+		// 5 * 2 * (-3) * 4 = -120
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "p", Operation: "multiply", Args: []any{5, 2, -3, 4}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, -120.0, result.Results["p"])
+	})
+
+	// Insufficient-args guards — the existing TestErrorHandling has a
+	// generic "insufficient_args" check; pin the specific ops here so a
+	// future refactor that loosens any of these is caught.
+	t.Run("add_one_arg_errors", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "add", Args: []any{42}},
+		})
+		errMap, ok := result.Results["x"].(map[string]any)
+		require.True(t, ok, "expected error map; got %T", result.Results["x"])
+		assert.Contains(t, errMap["error"], "at least 2")
+	})
+
+	t.Run("multiply_one_arg_errors", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "multiply", Args: []any{42}},
+		})
+		errMap, ok := result.Results["x"].(map[string]any)
+		require.True(t, ok)
+		assert.Contains(t, errMap["error"], "at least 2")
+	})
+}
+
+// TestStringNumericArgs verifies that string-encoded numbers are
+// resolved as decimals — used by the ReAct/agent path when the model
+// emits args as strings. This is distinct from the variable-reference
+// path (which also uses strings but resolves them via results-map
+// lookup first).
+func TestStringNumericArgs(t *testing.T) {
+	t.Run("integer_string", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "add", Args: []any{"100", "50"}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 150.0, result.Results["x"])
+	})
+
+	t.Run("decimal_string", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "multiply", Args: []any{"3.14", "2"}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 6.28, result.Results["x"])
+	})
+
+	t.Run("negative_string", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "add", Args: []any{"-5", "10"}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 5.0, result.Results["x"])
+	})
+
+	t.Run("scientific_string", func(t *testing.T) {
+		// "1e3" must parse as 1000 — shopspring/decimal supports this.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "add", Args: []any{"1e3", "500"}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 1500.0, result.Results["x"])
+	})
+
+	t.Run("non_numeric_string_errors", func(t *testing.T) {
+		// A string that's neither a known result name nor a parseable
+		// number must surface an error rather than silently coercing.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "add", Args: []any{"banana", 5}},
+		})
+		errMap, ok := result.Results["x"].(map[string]any)
+		require.True(t, ok, "expected error map; got %T", result.Results["x"])
+		assert.NotEmpty(t, errMap["error"])
+	})
+}
+
+// TestDeepVariableReferences exercises chained refs beyond the
+// existing 2-step "chain_reference" test. Three+ levels prove the
+// recursive resolveArgWithVisited path works under deeper nesting.
+func TestDeepVariableReferences(t *testing.T) {
+	t.Run("four_level_chain", func(t *testing.T) {
+		// a=10, b=a*2=20, c=b+5=25, d=c-1=24, e=d/3=8
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "a", Operation: "add", Args: []any{4, 6}},
+			{Name: "b", Operation: "multiply", Args: []any{"a", 2}},
+			{Name: "c", Operation: "add", Args: []any{"b", 5}},
+			{Name: "d", Operation: "subtract", Args: []any{"c", 1}},
+			{Name: "e", Operation: "divide", Args: []any{"d", 3}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 10.0, result.Results["a"])
+		assertNumericEqual(t, 20.0, result.Results["b"])
+		assertNumericEqual(t, 25.0, result.Results["c"])
+		assertNumericEqual(t, 24.0, result.Results["d"])
+		assertNumericEqual(t, 8.0, result.Results["e"])
+	})
+
+	t.Run("forward_reference_unresolved", func(t *testing.T) {
+		// Calc 1 references "later" which hasn't been computed yet.
+		// Without the result in the map, the string falls through to
+		// decimal.NewFromString and fails. Test that this surfaces as
+		// an error on calc 1, not a silent zero.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "early", Operation: "add", Args: []any{"later", 5}},
+			{Name: "later", Operation: "add", Args: []any{1, 2}},
+		})
+		errMap, ok := result.Results["early"].(map[string]any)
+		require.True(t, ok, "expected forward ref to error; got %T", result.Results["early"])
+		assert.NotEmpty(t, errMap["error"])
+		// Second calc still computes successfully.
+		assertNumericEqual(t, 3.0, result.Results["later"])
+	})
+
+	t.Run("ref_in_subtract_variadic_position", func(t *testing.T) {
+		// References mixed across positions — name in args[0], int in
+		// args[1] — confirms resolveArgs walks every slot, not just one.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "base", Operation: "add", Args: []any{1000, 0}},
+			{Name: "diff", Operation: "subtract", Args: []any{"base", 250}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 750.0, result.Results["diff"])
+	})
+}
+
+// TestBatchErrorIsolation: an errored calc must not poison subsequent
+// calcs that don't reference it. The existing reference_errored_result
+// test covers the consumer side; this covers the bystander side.
+func TestBatchErrorIsolation(t *testing.T) {
+	result := calculator.Calculate([]calculator.Calculation{
+		{Name: "ok1", Operation: "add", Args: []any{1, 2}},
+		{Name: "boom", Operation: "divide", Args: []any{1, 0}},
+		{Name: "ok2", Operation: "multiply", Args: []any{3, 4}},
+		{Name: "ok3", Operation: "subtract", Args: []any{10, 7}},
+	})
+	assert.True(t, result.Success, "Result.Success is per-batch, not per-calc")
+
+	assertNumericEqual(t, 3.0, result.Results["ok1"])
+	assertNumericEqual(t, 12.0, result.Results["ok2"])
+	assertNumericEqual(t, 3.0, result.Results["ok3"])
+
+	errMap, ok := result.Results["boom"].(map[string]any)
+	require.True(t, ok)
+	assert.Contains(t, errMap["error"], "zero")
+}
+
+// TestRoundDecimalPlacesArg: the existing "round" test uses default
+// precision; pin the explicit-decimal-places-arg behavior so a
+// regression to "ignore the second arg" is caught.
+func TestRoundDecimalPlacesArg(t *testing.T) {
+	t.Run("round_to_two_places", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "round", Args: []any{3.14159, 2}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 3.14, result.Results["x"])
+	})
+
+	t.Run("round_to_zero_places", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "round", Args: []any{3.7, 0}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 4.0, result.Results["x"])
+	})
+
+	t.Run("round_negative_places_truncates_left", func(t *testing.T) {
+		// Negative places rounds to tens / hundreds — shopspring/decimal
+		// supports this. 1234, -2 → 1200.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "round", Args: []any{1234, -2}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 1200.0, result.Results["x"])
+	})
+}
+
+// TestSignAndIdentityOps covers floor/ceil/abs across the sign domain.
+// The existing tests only cover one polarity each.
+func TestSignAndIdentityOps(t *testing.T) {
+	t.Run("ceil_negative", func(t *testing.T) {
+		// ceil(-3.2) = -3 (toward +∞).
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "ceil", Args: []any{-3.2}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, -3.0, result.Results["x"])
+	})
+
+	t.Run("floor_negative", func(t *testing.T) {
+		// floor is implemented as Truncate(0) — for -3.7 truncate gives
+		// -3 (toward 0), NOT -4 (toward -∞). Pin the as-implemented
+		// semantics so a future "fix" to true floor surfaces as a
+		// behavior-changing test failure rather than a silent rewrite.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "floor", Args: []any{-3.7}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, -3.0, result.Results["x"])
+	})
+
+	t.Run("abs_zero", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "x", Operation: "abs", Args: []any{0}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 0.0, result.Results["x"])
+	})
+}
+
+// TestComparisonDefaults: compare with no operator argument should
+// default to "<". The existing tests always pass an explicit operator.
+func TestComparisonDefaults(t *testing.T) {
+	t.Run("default_operator_is_less_than", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "cmp", Operation: "compare", Args: []any{5, 10}},
+		})
+		assert.True(t, result.Success)
+		assert.Equal(t, true, result.Results["cmp"])
+	})
+
+	t.Run("unknown_operator_errors", func(t *testing.T) {
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "cmp", Operation: "compare", Args: []any{5, 10, "≠"}},
+		})
+		errMap, ok := result.Results["cmp"].(map[string]any)
+		require.True(t, ok)
+		assert.Contains(t, errMap["error"], "unknown comparison operator")
+	})
+}
+
+// TestRealWorldRCMScenarios: the existing TestRealWorldScenarios block
+// is small. Add scenarios that mirror what the catalyst-rcm-dashboard-bot
+// agentic loop actually computes — these are concrete usage shapes that
+// we want to remain stable as the calculator evolves.
+func TestRealWorldRCMScenarios(t *testing.T) {
+	t.Run("per_day_rate_with_business_days_int_division", func(t *testing.T) {
+		// 1343 / 8 = 167.875 — the per-day rate for a partial month
+		// (Vikor/Example 1A scenario). Decimal precision matters: a
+		// float-based implementation would round to 167.87499999…
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "per_day", Operation: "divide", Args: []any{1343, 8}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 167.875, result.Results["per_day"])
+	})
+
+	t.Run("variance_pct_with_negative_change", func(t *testing.T) {
+		// percentage(80, 100) = (80 - 100) / 100 * 100 = -20.
+		// Negative variance should not be normalized to abs.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "v", Operation: "percentage", Args: []any{80, 100}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, -20.0, result.Results["v"])
+	})
+
+	t.Run("ar_aging_average_excluding_zero_buckets", func(t *testing.T) {
+		// avg(45, 32, 28) = 35.0 — typical AR-aging-by-payer mean.
+		result := calculator.Calculate([]calculator.Calculation{
+			{Name: "avg", Operation: "average", Args: []any{45, 32, 28}},
+		})
+		assert.True(t, result.Success)
+		assertNumericEqual(t, 35.0, result.Results["avg"])
+	})
+}
