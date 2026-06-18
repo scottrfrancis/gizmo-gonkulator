@@ -57,6 +57,65 @@ func makeRequest(t *testing.T, handler http.Handler, sessionID string, req JSONR
 	return resp
 }
 
+// TestServerStatelessToolsCall: with RequireSession=false the server accepts a
+// plain tools/call (no initialize handshake / Mcp-Session-Id) — matching a
+// sessionless JSON-RPC MCP. `calculate` is stateless, so the session was pure
+// gatekeeping. Used by the Catalyst chat deploy so the calculator behaves like
+// the (sessionless) data MCP.
+func TestServerStatelessToolsCall(t *testing.T) {
+	cfg := server.DefaultConfig()
+	cfg.RequireSession = false
+	handler := server.NewWithConfig(cfg).Handler()
+
+	req := JSONRPCRequest{
+		JSONRPC: "2.0", ID: 1, Method: "tools/call",
+		Params: map[string]any{
+			"name": "calculate",
+			"arguments": map[string]any{
+				"calculations": []map[string]any{
+					{"operation": "sum", "args": []any{1, 2, 3}, "name": "total"},
+				},
+			},
+		},
+	}
+	body, _ := json.Marshal(req)
+	httpReq := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httpReq)
+
+	require.Equal(t, http.StatusOK, rr.Code,
+		"stateless tools/call should not require a session; body=%s", rr.Body.String())
+	var resp JSONRPCResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Nil(t, resp.Error)
+	assert.NotNil(t, resp.Result)
+}
+
+// TestServerSessionRequiredByDefault: default config keeps the spec session gate,
+// so the reporting tool's external (handshaking) MCP clients are unaffected.
+func TestServerSessionRequiredByDefault(t *testing.T) {
+	handler := server.New().Handler()
+
+	req := JSONRPCRequest{
+		JSONRPC: "2.0", ID: 1, Method: "tools/call",
+		Params: map[string]any{
+			"name": "calculate",
+			"arguments": map[string]any{
+				"calculations": []map[string]any{{"operation": "sum", "args": []any{1, 2}}},
+			},
+		},
+	}
+	body, _ := json.Marshal(req)
+	httpReq := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httpReq)
+
+	require.Equal(t, http.StatusNotFound, rr.Code,
+		"default mode must still require a session")
+}
+
 // TestServerInitialize tests the initialize handshake.
 func TestServerInitialize(t *testing.T) {
 	srv := server.New()
