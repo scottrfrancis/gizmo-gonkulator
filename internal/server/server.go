@@ -120,7 +120,8 @@ type Server struct {
 	rateLimiter   *middleware.RateLimiter
 	authValidator auth.Validator
 	authScopes    []string
-	maxBodySize   int64
+	maxBodySize    int64
+	requireSession bool
 	metrics       *middleware.Metrics
 	logger        *slog.Logger
 	startTime     time.Time
@@ -146,6 +147,11 @@ type Config struct {
 	MaxBodySize int64
 	// Metrics
 	EnableMetrics bool
+	// RequireSession gates non-initialize methods on a valid Mcp-Session-Id
+	// (full MCP Streamable-HTTP spec). Set false for a sessionless mode where
+	// stateless tool calls (e.g. `calculate`) work with a plain tools/call —
+	// matching a simple JSON-RPC MCP. Default true preserves spec behaviour.
+	RequireSession bool
 }
 
 // DefaultConfig returns default server configuration.
@@ -160,6 +166,7 @@ func DefaultConfig() Config {
 		AuthAlgorithms:    []string{"RS256", "ES256"},
 		MaxBodySize:       1 << 20, // 1MB default
 		EnableMetrics:     true,
+		RequireSession:    true, // spec-compliant by default
 	}
 }
 
@@ -221,6 +228,7 @@ func NewWithConfig(cfg Config) *Server {
 		authValidator: authValidator,
 		authScopes:    cfg.AuthScopes,
 		maxBodySize:   cfg.MaxBodySize,
+		requireSession: cfg.RequireSession,
 		metrics:       metrics,
 		logger:        logger,
 		startTime:     time.Now(),
@@ -390,29 +398,39 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// All other methods require a valid session
+	// Session handling. `calculate` (and tools/list) are stateless, so with
+	// RequireSession=false non-initialize methods are served without a session
+	// — matching a sessionless JSON-RPC MCP. Default (true) keeps the full
+	// MCP Streamable-HTTP session gate for spec-compliant clients.
 	if sessionID == "" {
-		http.Error(w, "Session ID required", http.StatusNotFound)
-		return
-	}
-
-	sess, err := s.sessions.Get(ctx, sessionID)
-	if err != nil {
-		if errors.Is(err, session.ErrSessionNotFound) || errors.Is(err, session.ErrSessionExpired) {
-			http.Error(w, "Session not found", http.StatusNotFound)
+		if s.requireSession {
+			http.Error(w, "Session ID required", http.StatusNotFound)
 			return
 		}
-		s.sendError(w, req.ID, ErrCodeInternalError, "Session error", http.StatusInternalServerError)
-		return
-	}
+		// Stateless mode: a notification carries no session to act on — ack it.
+		if req.ID == nil {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+	} else {
+		sess, err := s.sessions.Get(ctx, sessionID)
+		if err != nil {
+			if errors.Is(err, session.ErrSessionNotFound) || errors.Is(err, session.ErrSessionExpired) {
+				http.Error(w, "Session not found", http.StatusNotFound)
+				return
+			}
+			s.sendError(w, req.ID, ErrCodeInternalError, "Session error", http.StatusInternalServerError)
+			return
+		}
 
-	// Touch session to extend timeout
-	s.sessions.Touch(ctx, sessionID)
+		// Touch session to extend timeout
+		s.sessions.Touch(ctx, sessionID)
 
-	// Handle notification (no response)
-	if req.ID == nil {
-		s.handleNotification(w, r, req, sess)
-		return
+		// Handle notification (no response)
+		if req.ID == nil {
+			s.handleNotification(w, r, req, sess)
+			return
+		}
 	}
 
 	// Handle request methods

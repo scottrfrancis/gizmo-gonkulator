@@ -62,6 +62,13 @@ func main() {
 		cfg.EnableRateLimiter = false
 	}
 
+	// Sessionless mode: serve stateless tool calls (e.g. calculate) without the
+	// MCP session handshake, matching a simple JSON-RPC MCP. Default keeps the
+	// spec session gate.
+	if v := os.Getenv("MCP_REQUIRE_SESSION"); v == "false" {
+		cfg.RequireSession = false
+	}
+
 	// Auth configuration
 	// API key auth (simpler alternative to OAuth)
 	if v := os.Getenv("MCP_API_KEY"); v != "" {
