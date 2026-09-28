@@ -79,7 +79,7 @@ Claude will invoke:
   "results": {
     "oct_rate": 300000.0,
     "sep_rate": 400000.0,
-    "change": -25.0...
+    "change": -25.0
   }
 }
 ```

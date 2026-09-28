@@ -51,17 +51,16 @@ func TestBasicOperations(t *testing.T) {
 	})
 
 	// Regression: subtract previously dropped args[2:], so passing
-	// [a, b, c] returned a-b instead of a-b-c. The narrative-generation
-	// path frequently calls e.g. subtract(total, a, b) to compute
-	// excluding-two-categories aggregates and was silently getting wrong
-	// answers.
+	// [a, b, c] returned a-b instead of a-b-c. A narrative-generation
+	// path often calls e.g. subtract(total, a, b) to compute a total
+	// excluding two categories, and was silently getting wrong answers.
 	t.Run("subtract_variadic_three_args", func(t *testing.T) {
-		// 1343 - 3 - 418 = 922 (the example excl case).
+		// 1200 - 40 - 310 = 850 (a total excluding two categories).
 		result := calculator.Calculate([]calculator.Calculation{
-			{Name: "excl", Operation: "subtract", Args: []any{1343, 3, 418}},
+			{Name: "excl", Operation: "subtract", Args: []any{1200, 40, 310}},
 		})
 		assert.True(t, result.Success)
-		assertNumericEqual(t, 922.0, result.Results["excl"])
+		assertNumericEqual(t, 850.0, result.Results["excl"])
 	})
 
 	t.Run("subtract_variadic_four_args", func(t *testing.T) {
@@ -471,8 +470,8 @@ func TestCalculationEngine(t *testing.T) {
 
 // TestRealWorldScenarios tests real-world calculation scenarios.
 func TestRealWorldScenarios(t *testing.T) {
-	t.Run("reporting_per_day_rates", func(t *testing.T) {
-		// Original error case: AI said "trending higher" when data showed lower.
+	t.Run("per_day_rates", func(t *testing.T) {
+		// Error case: AI said "trending higher" when the per-day rate was lower.
 		// October: $2,400,000 / 8 days = $300,000.00/day
 		// September: $8,400,000 / 21 days = $400,000.00/day
 		// October rate is LOWER than September.
@@ -492,8 +491,8 @@ func TestRealWorldScenarios(t *testing.T) {
 		assert.True(t, isLower) // October IS lower
 	})
 
-	t.Run("reporting_percentage_change", func(t *testing.T) {
-		// Original error case: AI said "72% decline" when actual was 26.3%.
+	t.Run("percentage_change", func(t *testing.T) {
+		// Error case: AI said "72% decline" when actual was 26.3%.
 		// AI confused ratio (51600/70000 = 73.7%) with percentage change.
 		// Correct: ((51600 - 70000) / 70000) * 100 = -26.3%
 		result := calculator.Calculate([]calculator.Calculation{
@@ -857,19 +856,19 @@ func TestComparisonDefaults(t *testing.T) {
 }
 
 // TestRealWorldReportingScenarios: the existing TestRealWorldScenarios block
-// is small. Add scenarios that mirror what the a reporting agent
-// agentic loop actually computes — these are concrete usage shapes that
-// we want to remain stable as the calculator evolves.
+// is small. Add scenarios that mirror what a reporting agent's loop actually
+// computes. These are concrete usage shapes that we want to remain stable as
+// the calculator evolves.
 func TestRealWorldReportingScenarios(t *testing.T) {
 	t.Run("per_day_rate_with_business_days_int_division", func(t *testing.T) {
-		// 1343 / 8 = 167.875 — the per-day rate for a partial month
-		// (example scenario). Decimal precision matters: a
-		// float-based implementation would round to 167.87499999…
+		// 1351 / 8 = 168.875, the per-day rate for a partial month.
+		// Decimal precision matters: a float-based implementation can drift
+		// in the last places.
 		result := calculator.Calculate([]calculator.Calculation{
-			{Name: "per_day", Operation: "divide", Args: []any{1343, 8}},
+			{Name: "per_day", Operation: "divide", Args: []any{1351, 8}},
 		})
 		assert.True(t, result.Success)
-		assertNumericEqual(t, 167.875, result.Results["per_day"])
+		assertNumericEqual(t, 168.875, result.Results["per_day"])
 	})
 
 	t.Run("variance_pct_with_negative_change", func(t *testing.T) {
@@ -882,8 +881,8 @@ func TestRealWorldReportingScenarios(t *testing.T) {
 		assertNumericEqual(t, -20.0, result.Results["v"])
 	})
 
-	t.Run("ar_aging_average_excluding_zero_buckets", func(t *testing.T) {
-		// avg(45, 32, 28) = 35.0 — typical aging-bucket mean.
+	t.Run("average_excluding_zero_buckets", func(t *testing.T) {
+		// avg(45, 32, 28) = 35.0, a typical mean across aging buckets.
 		result := calculator.Calculate([]calculator.Calculation{
 			{Name: "avg", Operation: "average", Args: []any{45, 32, 28}},
 		})

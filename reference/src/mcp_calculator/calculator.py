@@ -24,7 +24,7 @@ class CalculationEngine:
             {"name": "sep_rate", "operation": "divide", "args": [8400000, 21]},
             {"name": "change", "operation": "percentage", "args": ["oct_rate", "sep_rate"]}
         ])
-        # Returns: {"oct_rate": 300000.0, "sep_rate": 400000.0..., "change": -25.0...}
+        # Returns: {"oct_rate": 300000.0, "sep_rate": 400000.0, "change": -25.0}
     """
 
     def __init__(self, decimal_places: int = 10):

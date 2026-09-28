@@ -287,7 +287,7 @@ func TestRealWorldCalculation(t *testing.T) {
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	resp.Body.Close()
 
-	// reporting scenario: per-day rate comparison
+	// Reporting scenario: per-day rate comparison
 	callReq := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      2,

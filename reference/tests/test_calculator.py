@@ -266,7 +266,7 @@ class TestCalculationEngine:
 class TestRealWorldScenarios:
     """Test real-world calculation scenarios from the original project."""
 
-    def test_reporting_per_day_rates(self):
+    def test_per_day_rates(self):
         """
         Original error case: AI said "trending higher" when data showed lower.
         October: $2,400,000 / 8 days = $300,000.00/day
@@ -283,7 +283,7 @@ class TestRealWorldScenarios:
         assert abs(result["results"]["sep_per_day"] - 400000.0) < 0.1
         assert result["results"]["is_lower"] is True  # October IS lower
 
-    def test_reporting_percentage_change(self):
+    def test_percentage_change(self):
         """
         Original error case: AI said "72% decline" when actual was 26.3%.
         AI confused ratio (51600/70000 = 73.7%) with percentage change.

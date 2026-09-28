@@ -15,7 +15,7 @@ LLMs make systematic arithmetic errors when performing calculations during text 
 | Context | AI Output | Correct Value | Error Type |
 |---------|-----------|---------------|------------|
 | Financial decline | "72% decline" | 26.3% decline | Confused ratio with % change |
-| revenue trend | "trending higher" | trending lower | Incorrect comparison |
+| Revenue trend | "trending higher" | trending lower | Incorrect comparison |
 | Per-day rates | Wrong values | $320k vs $418k | Division errors |
 
 **Observed error rate:** 10-20% in sections requiring AI math vs. 0% with tool-assisted calculations.
@@ -259,7 +259,7 @@ For financial applications, floating-point errors are unacceptable.
 1. **Financial Reports** - Revenue analysis, variance calculations, trend detection
 2. **Scientific Computing** - Unit conversions, statistical analysis
 3. **E-commerce** - Pricing calculations, discount percentages, tax computation
-4. **reporting Analytics** - Per-day rates, percentage changes, comparisons
+4. **Reporting Analytics** - Per-day rates, percentage changes, comparisons
 5. **Any AI Agent** - Wherever deterministic math is required
 
 ---

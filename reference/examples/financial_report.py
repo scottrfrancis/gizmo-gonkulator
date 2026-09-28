@@ -12,28 +12,28 @@ sys.path.insert(0, '../src')
 from mcp_calculator import calculate
 
 
-def analyze_collections():
+def analyze_revenue():
     """
     Analyze revenue data - a real-world scenario where AI made errors.
 
     Original problem:
-    - AI claimed "trending higher" when data showed revenue were LOWER
+    - AI claimed "trending higher" when data showed revenue was LOWER
     - AI calculated "72% decline" when actual decline was 26.3%
     """
     print("=" * 60)
-    print("reporting revenue Analysis")
+    print("Revenue Analysis")
     print("=" * 60)
 
     # Raw data
-    october_collections = 2400000  # dollars
+    october_revenue = 2400000  # dollars
     october_days = 8  # business days
-    september_collections = 8400000
+    september_revenue = 8400000
     september_days = 21
 
     # Calculate per-day rates and compare
     result = calculate([
-        {"name": "oct_per_day", "operation": "divide", "args": [october_collections, october_days]},
-        {"name": "sep_per_day", "operation": "divide", "args": [september_collections, september_days]},
+        {"name": "oct_per_day", "operation": "divide", "args": [october_revenue, october_days]},
+        {"name": "sep_per_day", "operation": "divide", "args": [september_revenue, september_days]},
         {"name": "is_lower", "operation": "compare", "args": ["oct_per_day", "sep_per_day", "<"]},
         {"name": "pct_change", "operation": "percentage", "args": ["oct_per_day", "sep_per_day"]}
     ])
@@ -47,7 +47,7 @@ def analyze_collections():
     # Generate correct narrative
     trend = "lower" if results["is_lower"] else "higher"
     direction = "decline" if results["pct_change"] < 0 else "increase"
-    print(f"\nCorrect narrative: revenue are trending {trend} "
+    print(f"\nCorrect narrative: Revenue is trending {trend} "
           f"({abs(results['pct_change']):.1f}% {direction})")
 
     print("\n" + "-" * 60)
@@ -127,7 +127,7 @@ def batch_financial_metrics():
 
 
 if __name__ == "__main__":
-    analyze_collections()
+    analyze_revenue()
     analyze_managed_medicare()
     batch_financial_metrics()
 

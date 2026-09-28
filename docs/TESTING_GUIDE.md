@@ -10,7 +10,7 @@
 | **Protocol** | MCP 2025-03-26 (Streamable HTTP) |
 | **EC2 Instance** | `i-07f420b768f425ed9` (us-east-2) |
 
-> **Local Development:** Use `mcp.local.example` for local testing with your-host.
+> **Local Development:** Use `mcp.local.example` for local testing with a local deployment.
 
 ---
 
@@ -209,7 +209,7 @@ What is 0.1 + 0.2? Use the calculator tool.
 
 *Expected: Claude uses the calculator and returns exactly 0.3*
 
-#### reporting Metrics
+#### Reporting Metrics
 
 ```csv
 Using the calculator tool, compute:
@@ -316,4 +316,4 @@ AWS_PROFILE=ai-lab aws ssm send-command \
   --region us-east-2
 ```
 
-**Local development:** For local testing with your-host, use `mcp.local.example` instead (requires MCP services running locally).
+**Local development:** For local testing with a local deployment, use `mcp.local.example` instead (requires MCP services running locally).
