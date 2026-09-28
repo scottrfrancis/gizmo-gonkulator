@@ -60,8 +60,8 @@ func makeRequest(t *testing.T, handler http.Handler, sessionID string, req JSONR
 // TestServerStatelessToolsCall: with RequireSession=false the server accepts a
 // plain tools/call (no initialize handshake / Mcp-Session-Id) — matching a
 // sessionless JSON-RPC MCP. `calculate` is stateless, so the session was pure
-// gatekeeping. Used by the Catalyst chat deploy so the calculator behaves like
-// the (sessionless) data MCP.
+// gatekeeping. Useful when the calculator is deployed beside a sessionless
+// data MCP and should behave the same way.
 func TestServerStatelessToolsCall(t *testing.T) {
 	cfg := server.DefaultConfig()
 	cfg.RequireSession = false

@@ -51,17 +51,16 @@ func TestBasicOperations(t *testing.T) {
 	})
 
 	// Regression: subtract previously dropped args[2:], so passing
-	// [a, b, c] returned a-b instead of a-b-c. The narrative-generation
-	// path frequently calls e.g. subtract(total, COVID, PATH) to compute
-	// excluding-COVID/PATH aggregates and was silently getting wrong
-	// answers.
+	// [a, b, c] returned a-b instead of a-b-c. A narrative-generation
+	// path often calls e.g. subtract(total, a, b) to compute a total
+	// excluding two categories, and was silently getting wrong answers.
 	t.Run("subtract_variadic_three_args", func(t *testing.T) {
-		// 1343 - 3 - 418 = 922 (the Vikor/Example-1A excl-COVID/PATH case).
+		// 1200 - 40 - 310 = 850 (a total excluding two categories).
 		result := calculator.Calculate([]calculator.Calculation{
-			{Name: "excl", Operation: "subtract", Args: []any{1343, 3, 418}},
+			{Name: "excl", Operation: "subtract", Args: []any{1200, 40, 310}},
 		})
 		assert.True(t, result.Success)
-		assertNumericEqual(t, 922.0, result.Results["excl"])
+		assertNumericEqual(t, 850.0, result.Results["excl"])
 	})
 
 	t.Run("subtract_variadic_four_args", func(t *testing.T) {
@@ -323,8 +322,8 @@ func TestVariableReferences(t *testing.T) {
 	t.Run("chain_reference", func(t *testing.T) {
 		// Test chained variable references
 		result := calculator.Calculate([]calculator.Calculation{
-			{Name: "oct_rate", Operation: "divide", Args: []any{2561276, 8}},
-			{Name: "sep_rate", Operation: "divide", Args: []any{8782334, 21}},
+			{Name: "oct_rate", Operation: "divide", Args: []any{2400000, 8}},
+			{Name: "sep_rate", Operation: "divide", Args: []any{8400000, 21}},
 			{Name: "change", Operation: "percentage", Args: []any{"oct_rate", "sep_rate"}},
 		})
 		assert.True(t, result.Success)
@@ -333,8 +332,8 @@ func TestVariableReferences(t *testing.T) {
 		sepRate := toFloat64(result.Results["sep_rate"])
 		change := toFloat64(result.Results["change"])
 
-		assert.InDelta(t, 320159.5, octRate, 0.1)
-		assert.InDelta(t, 418206.38, sepRate, 0.1)
+		assert.InDelta(t, 300000.0, octRate, 0.1)
+		assert.InDelta(t, 400000.0, sepRate, 0.1)
 		// Change should be negative (oct is less than sep)
 		assert.True(t, change < 0)
 	})
@@ -471,14 +470,14 @@ func TestCalculationEngine(t *testing.T) {
 
 // TestRealWorldScenarios tests real-world calculation scenarios.
 func TestRealWorldScenarios(t *testing.T) {
-	t.Run("healthcare_per_day_rates", func(t *testing.T) {
-		// Original error case: AI said "trending higher" when data showed lower.
-		// October: $2,561,276 / 8 days = $320,159.50/day
-		// September: $8,782,334 / 21 days = $418,206.38/day
+	t.Run("per_day_rates", func(t *testing.T) {
+		// Error case: AI said "trending higher" when the per-day rate was lower.
+		// October: $2,400,000 / 8 days = $300,000.00/day
+		// September: $8,400,000 / 21 days = $400,000.00/day
 		// October rate is LOWER than September.
 		result := calculator.Calculate([]calculator.Calculation{
-			{Name: "oct_per_day", Operation: "divide", Args: []any{2561276, 8}},
-			{Name: "sep_per_day", Operation: "divide", Args: []any{8782334, 21}},
+			{Name: "oct_per_day", Operation: "divide", Args: []any{2400000, 8}},
+			{Name: "sep_per_day", Operation: "divide", Args: []any{8400000, 21}},
 			{Name: "is_lower", Operation: "compare", Args: []any{"oct_per_day", "sep_per_day", "<"}},
 		})
 		assert.True(t, result.Success)
@@ -487,13 +486,13 @@ func TestRealWorldScenarios(t *testing.T) {
 		sepPerDay := toFloat64(result.Results["sep_per_day"])
 		isLower := result.Results["is_lower"].(bool)
 
-		assert.InDelta(t, 320159.5, octPerDay, 0.1)
-		assert.InDelta(t, 418206.38, sepPerDay, 0.1)
+		assert.InDelta(t, 300000.0, octPerDay, 0.1)
+		assert.InDelta(t, 400000.0, sepPerDay, 0.1)
 		assert.True(t, isLower) // October IS lower
 	})
 
-	t.Run("healthcare_percentage_change", func(t *testing.T) {
-		// Original error case: AI said "72% decline" when actual was 26.3%.
+	t.Run("percentage_change", func(t *testing.T) {
+		// Error case: AI said "72% decline" when actual was 26.3%.
 		// AI confused ratio (51600/70000 = 73.7%) with percentage change.
 		// Correct: ((51600 - 70000) / 70000) * 100 = -26.3%
 		result := calculator.Calculate([]calculator.Calculation{
@@ -856,20 +855,20 @@ func TestComparisonDefaults(t *testing.T) {
 	})
 }
 
-// TestRealWorldRCMScenarios: the existing TestRealWorldScenarios block
-// is small. Add scenarios that mirror what the catalyst-rcm-dashboard-bot
-// agentic loop actually computes — these are concrete usage shapes that
-// we want to remain stable as the calculator evolves.
-func TestRealWorldRCMScenarios(t *testing.T) {
+// TestRealWorldReportingScenarios: the existing TestRealWorldScenarios block
+// is small. Add scenarios that mirror what a reporting agent's loop actually
+// computes. These are concrete usage shapes that we want to remain stable as
+// the calculator evolves.
+func TestRealWorldReportingScenarios(t *testing.T) {
 	t.Run("per_day_rate_with_business_days_int_division", func(t *testing.T) {
-		// 1343 / 8 = 167.875 — the per-day rate for a partial month
-		// (Vikor/Example 1A scenario). Decimal precision matters: a
-		// float-based implementation would round to 167.87499999…
+		// 1351 / 8 = 168.875, the per-day rate for a partial month.
+		// Decimal precision matters: a float-based implementation can drift
+		// in the last places.
 		result := calculator.Calculate([]calculator.Calculation{
-			{Name: "per_day", Operation: "divide", Args: []any{1343, 8}},
+			{Name: "per_day", Operation: "divide", Args: []any{1351, 8}},
 		})
 		assert.True(t, result.Success)
-		assertNumericEqual(t, 167.875, result.Results["per_day"])
+		assertNumericEqual(t, 168.875, result.Results["per_day"])
 	})
 
 	t.Run("variance_pct_with_negative_change", func(t *testing.T) {
@@ -882,8 +881,8 @@ func TestRealWorldRCMScenarios(t *testing.T) {
 		assertNumericEqual(t, -20.0, result.Results["v"])
 	})
 
-	t.Run("ar_aging_average_excluding_zero_buckets", func(t *testing.T) {
-		// avg(45, 32, 28) = 35.0 — typical AR-aging-by-payer mean.
+	t.Run("average_excluding_zero_buckets", func(t *testing.T) {
+		// avg(45, 32, 28) = 35.0, a typical mean across aging buckets.
 		result := calculator.Calculate([]calculator.Calculation{
 			{Name: "avg", Operation: "average", Args: []any{45, 32, 28}},
 		})

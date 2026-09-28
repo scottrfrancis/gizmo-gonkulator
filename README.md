@@ -104,8 +104,8 @@ Calculations can reference previous results by name:
 ```json
 {
   "calculations": [
-    {"name": "oct_rate", "operation": "divide", "args": [2561276, 8]},
-    {"name": "sep_rate", "operation": "divide", "args": [8782334, 21]},
+    {"name": "oct_rate", "operation": "divide", "args": [2400000, 8]},
+    {"name": "sep_rate", "operation": "divide", "args": [8400000, 21]},
     {"name": "change", "operation": "percentage", "args": ["oct_rate", "sep_rate"]}
   ]
 }

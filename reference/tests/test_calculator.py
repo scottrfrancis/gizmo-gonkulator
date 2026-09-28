@@ -183,13 +183,13 @@ class TestVariableReferences:
     def test_chain_reference(self):
         """Test chained variable references."""
         result = calculate([
-            {"name": "oct_rate", "operation": "divide", "args": [2561276, 8]},
-            {"name": "sep_rate", "operation": "divide", "args": [8782334, 21]},
+            {"name": "oct_rate", "operation": "divide", "args": [2400000, 8]},
+            {"name": "sep_rate", "operation": "divide", "args": [8400000, 21]},
             {"name": "change", "operation": "percentage", "args": ["oct_rate", "sep_rate"]}
         ])
         assert result["success"] is True
-        assert abs(result["results"]["oct_rate"] - 320159.5) < 0.1
-        assert abs(result["results"]["sep_rate"] - 418206.38) < 0.1
+        assert abs(result["results"]["oct_rate"] - 300000.0) < 0.1
+        assert abs(result["results"]["sep_rate"] - 400000.0) < 0.1
         # Change should be negative (oct is less than sep)
         assert result["results"]["change"] < 0
 
@@ -266,24 +266,24 @@ class TestCalculationEngine:
 class TestRealWorldScenarios:
     """Test real-world calculation scenarios from the original project."""
 
-    def test_healthcare_per_day_rates(self):
+    def test_per_day_rates(self):
         """
         Original error case: AI said "trending higher" when data showed lower.
-        October: $2,561,276 / 8 days = $320,159.50/day
-        September: $8,782,334 / 21 days = $418,206.38/day
+        October: $2,400,000 / 8 days = $300,000.00/day
+        September: $8,400,000 / 21 days = $400,000.00/day
         October rate is LOWER than September.
         """
         result = calculate([
-            {"name": "oct_per_day", "operation": "divide", "args": [2561276, 8]},
-            {"name": "sep_per_day", "operation": "divide", "args": [8782334, 21]},
+            {"name": "oct_per_day", "operation": "divide", "args": [2400000, 8]},
+            {"name": "sep_per_day", "operation": "divide", "args": [8400000, 21]},
             {"name": "is_lower", "operation": "compare", "args": ["oct_per_day", "sep_per_day", "<"]}
         ])
         assert result["success"] is True
-        assert abs(result["results"]["oct_per_day"] - 320159.5) < 0.1
-        assert abs(result["results"]["sep_per_day"] - 418206.38) < 0.1
+        assert abs(result["results"]["oct_per_day"] - 300000.0) < 0.1
+        assert abs(result["results"]["sep_per_day"] - 400000.0) < 0.1
         assert result["results"]["is_lower"] is True  # October IS lower
 
-    def test_healthcare_percentage_change(self):
+    def test_percentage_change(self):
         """
         Original error case: AI said "72% decline" when actual was 26.3%.
         AI confused ratio (51600/70000 = 73.7%) with percentage change.

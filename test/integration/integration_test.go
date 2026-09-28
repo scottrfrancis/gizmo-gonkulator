@@ -287,7 +287,7 @@ func TestRealWorldCalculation(t *testing.T) {
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	resp.Body.Close()
 
-	// Healthcare scenario: per-day rate comparison
+	// Reporting scenario: per-day rate comparison
 	callReq := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      2,
@@ -296,8 +296,8 @@ func TestRealWorldCalculation(t *testing.T) {
 			"name": "calculate",
 			"arguments": map[string]any{
 				"calculations": []map[string]any{
-					{"name": "oct_per_day", "operation": "divide", "args": []any{2561276, 8}},
-					{"name": "sep_per_day", "operation": "divide", "args": []any{8782334, 21}},
+					{"name": "oct_per_day", "operation": "divide", "args": []any{2400000, 8}},
+					{"name": "sep_per_day", "operation": "divide", "args": []any{8400000, 21}},
 					{"name": "pct_change", "operation": "percentage", "args": []any{"oct_per_day", "sep_per_day"}},
 					{"name": "is_declining", "operation": "compare", "args": []any{"pct_change", 0, "<"}},
 				},
@@ -326,18 +326,18 @@ func TestRealWorldCalculation(t *testing.T) {
 
 	results := calcResult["results"].(map[string]any)
 
-	// October rate should be ~$320,159.50/day
+	// October rate should be ~$300,000.00/day
 	octRate := results["oct_per_day"].(float64)
-	assert.InDelta(t, 320159.5, octRate, 0.5)
+	assert.InDelta(t, 300000.0, octRate, 0.5)
 
-	// September rate should be ~$418,206.38/day
+	// September rate should be ~$400,000.00/day
 	sepRate := results["sep_per_day"].(float64)
-	assert.InDelta(t, 418206.38, sepRate, 0.5)
+	assert.InDelta(t, 400000.0, sepRate, 0.5)
 
 	// Percentage change should be negative (declining)
 	pctChange := results["pct_change"].(float64)
 	assert.True(t, pctChange < 0, "should show decline")
-	assert.InDelta(t, -23.44, pctChange, 0.5) // Approximately -23.44%
+	assert.InDelta(t, -25.0, pctChange, 0.5) // Approximately -25.0%
 
 	// Is declining should be true
 	assert.True(t, results["is_declining"].(bool))

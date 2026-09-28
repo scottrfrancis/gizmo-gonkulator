@@ -158,7 +158,7 @@ The calculator engine provides precise arithmetic calculations using arbitrary-p
 
 ### Variable References
 - Given: `a = sum(10, 20)` then `multiply("a", 2)` = 60.0
-- Chain: `oct_rate = divide(2561276, 8)`, `sep_rate = divide(8782334, 21)`,
+- Chain: `oct_rate = divide(2400000, 8)`, `sep_rate = divide(8400000, 21)`,
   `percentage("oct_rate", "sep_rate")` < 0 (negative change)
 
 ## Implementation Notes

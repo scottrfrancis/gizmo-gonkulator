@@ -20,11 +20,11 @@ class CalculationEngine:
     Example:
         engine = CalculationEngine()
         result = engine.execute([
-            {"name": "oct_rate", "operation": "divide", "args": [2561276, 8]},
-            {"name": "sep_rate", "operation": "divide", "args": [8782334, 21]},
+            {"name": "oct_rate", "operation": "divide", "args": [2400000, 8]},
+            {"name": "sep_rate", "operation": "divide", "args": [8400000, 21]},
             {"name": "change", "operation": "percentage", "args": ["oct_rate", "sep_rate"]}
         ])
-        # Returns: {"oct_rate": 320159.5, "sep_rate": 418206.38..., "change": -23.44...}
+        # Returns: {"oct_rate": 300000.0, "sep_rate": 400000.0, "change": -25.0}
     """
 
     def __init__(self, decimal_places: int = 10):

@@ -4,13 +4,13 @@
 
 | Setting | Value |
 |---------|-------|
-| **Server URL** | `https://catalyst-mcp-ec2.scootersoft.info/calc` |
+| **Server URL** | `https://mcp.example.com/calc` |
 | **API Key** | `$MCP_CALC_API_KEY` |
 | **Auth Header** | `X-API-Key: $MCP_CALC_API_KEY` |
 | **Protocol** | MCP 2025-03-26 (Streamable HTTP) |
 | **EC2 Instance** | `i-07f420b768f425ed9` (us-east-2) |
 
-> **Local Development:** Use `catalyst-mcp.scootersoft.info` for local testing with mini.local.
+> **Local Development:** Use `mcp.local.example` for local testing with a local deployment.
 
 ---
 
@@ -19,7 +19,7 @@
 ### 1.1 Health Check (requires API key via nginx)
 
 ```bash
-curl -s https://catalyst-mcp-ec2.scootersoft.info/calc/health \
+curl -s https://mcp.example.com/calc/health \
   -H "X-API-Key: $MCP_CALC_API_KEY" | jq .
 ```
 
@@ -36,7 +36,7 @@ Expected response:
 ### 1.2 Initialize a Session
 
 ```bash
-curl -s -i -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
+curl -s -i -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $MCP_CALC_API_KEY" \
   -d '{
@@ -59,7 +59,7 @@ curl -s -i -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
 export SESSION_ID="14938f48-2065-44ed-9b56-a58dbcfe54b4"  # Replace with actual SESSION_ID from the previous response
 
 # Replace SESSION_ID with the value from step 1.2
-curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
+curl -s -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $MCP_CALC_API_KEY" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
@@ -73,7 +73,7 @@ curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
 ### 1.4 Simple Calculation (0.1 + 0.2)
 
 ```bash
-curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
+curl -s -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $MCP_CALC_API_KEY" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
@@ -97,7 +97,7 @@ Expected: `{"results":{"result":0.3},"success":true}`
 ### 1.5 Batch Calculation with References
 
 ```bash
-curl -s -X POST "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp" \
+curl -s -X POST "https://mcp.example.com/calc/mcp" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $MCP_CALC_API_KEY" \
   -H "Mcp-Session-Id: ${SESSION_ID}" \
@@ -125,7 +125,7 @@ Save as `~/test-mcp.sh`:
 
 ```bash
 #!/bin/bash
-SERVER="https://catalyst-mcp-ec2.scootersoft.info/calc"
+SERVER="https://mcp.example.com/calc"
 API_KEY="$MCP_CALC_API_KEY"
 
 echo "=== Health Check ==="
@@ -176,7 +176,7 @@ Add this configuration (Claude Desktop uses `mcp-remote` for HTTPS servers):
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://catalyst-mcp-ec2.scootersoft.info/calc/mcp",
+        "https://mcp.example.com/calc/mcp",
         "--header", "X-API-Key: $MCP_CALC_API_KEY"
       ],
       "env": {
@@ -209,13 +209,13 @@ What is 0.1 + 0.2? Use the calculator tool.
 
 *Expected: Claude uses the calculator and returns exactly 0.3*
 
-#### Healthcare Metrics
+#### Reporting Metrics
 
 ```csv
 Using the calculator tool, compute:
 1. Sum these charges: 125000, 89500, 156000, 234000
 2. Calculate the average of those same values
-3. If we had 15000 in denials, what percentage is that of the total? (divide denials by total, multiply by 100)
+3. If we had 15000 in returns, what percentage is that of the total? (divide returns by total, multiply by 100)
 ```
 
 #### Financial Calculation
@@ -293,7 +293,7 @@ The session expired or you're using an invalid session ID. Re-run the `initializ
 ### Claude Desktop doesn't show the calculator
 
 1. Check the config file syntax (valid JSON)
-2. Ensure the server is running: `curl -s https://catalyst-mcp-ec2.scootersoft.info/calc/health -H "X-API-Key: $MCP_CALC_API_KEY"`
+2. Ensure the server is running: `curl -s https://mcp.example.com/calc/health -H "X-API-Key: $MCP_CALC_API_KEY"`
 3. Restart Claude Desktop completely (quit, not just close window)
 
 ### Connection refused
@@ -316,4 +316,4 @@ AWS_PROFILE=ai-lab aws ssm send-command \
   --region us-east-2
 ```
 
-**Local development:** For local testing with mini.local, use `catalyst-mcp.scootersoft.info` instead (requires MCP services running locally).
+**Local development:** For local testing with a local deployment, use `mcp.local.example` instead (requires MCP services running locally).

@@ -359,7 +359,7 @@ The project includes comprehensive tests:
 
 - Table-driven tests with `t.Run()`
 - Race detector enabled (`go test -race`)
-- Real-world healthcare data scenarios
+- Real-world reporting data scenarios
 - Precision validation (0.1 + 0.2 = 0.3)
 
 ---
